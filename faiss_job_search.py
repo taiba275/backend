@@ -276,9 +276,33 @@ try:
     id_map = list(mapping)
     print(f"✅ FAISS loaded: vectors={index.ntotal}, dim={index.d}")
 except Exception as e:
-    print("❌ Failed to load FAISS index:", e)
-    index = None
-    id_map = []
+    print("⚠️ Failed to load FAISS index from file:", e)
+    print("⏳ Rebuilding FAISS index from MongoDB...")
+    from faiss import IndexFlatIP
+    import numpy as np
+
+    embedder = SentenceTransformer(EMBED_MODEL_NAME)
+    docs = list(jobs_collection.find({}, {"_id": 1, "Title": 1, "Description": 1}))
+    vectors = []
+    ids = []
+    for doc in docs:
+        text = f"{doc.get('Title', '')} {doc.get('Description', '')}".strip()
+        vec = embedder.encode([text])[0].astype("float32")
+        vectors.append(vec)
+        ids.append(str(doc["_id"]))
+
+    if vectors:
+        vectors_np = np.array(vectors, dtype="float32")
+        faiss_index = IndexFlatIP(vectors_np.shape[1])
+        faiss_index.add(vectors_np)
+        index = faiss_index
+        id_map = ids
+        print(f"✅ Rebuilt FAISS index: {len(ids)} vectors")
+    else:
+        print("❌ No jobs found to build FAISS index")
+        index = None
+        id_map = []
+
 
 # =========================
 # Models
